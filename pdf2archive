@@ -76,6 +76,8 @@ OPTIONS:
                       specified via the command line options.
   --validate          Validate  the resulting file. The  validation is done with
                       VeraPDF, you need a working Java installation.
+  --validate-only     Perform only the validation on the input file, again using
+                      VeraPDF
   --debug             Write additional debug information on screen
   -v, --version       Show the program version
 
@@ -104,6 +106,22 @@ if [ "$(which gs)" == "" ]; then
     echo "  ERROR: Ghostscript is not installed or it's not in the path"
     exit
 fi
+
+
+#=====# VALIDATION #=====#
+
+javaCheck() {
+    if [ "$(which java)" == "" ]; then
+        echo "  ERROR: Java is not installed or it's not in the path"
+        echo "  Cannot perform validation"
+        exit 1
+    fi
+}
+
+validate() {
+    echo "  Validating..."
+    echo "  $(./verapdf/verapdf "$1" --extract --flavour 1b --format text "$2")"
+}
 
 
 #=====# INPUT PARSER #=====#
@@ -169,11 +187,13 @@ while [ "$1" != "" ]; do
             PDFCREATOR=$VALUE
             ;;
         --validate)
-            if [ "$(which java)" == "" ]; then
-                echo "  ERROR: Java is not installed or it's not in the path"
-                exit 1
-            fi
+            javaCheck
             VALIDATE=true
+            ;;
+        --validate-only)
+            javaCheck
+            validate $VERAMSGOPTS $2
+            exit
             ;;
         *.pdf)
             if [ "$INPUT" == "" ]; then
@@ -194,7 +214,6 @@ while [ "$1" != "" ]; do
     esac
     shift
 done
-
 
 #=====# SET UP ALL THE STUFF #=====#
 echo "=== Welcome to PDF2ARCHIVE ==="
@@ -236,7 +255,7 @@ quit
 #     use 'LC_CTYPE=C && LANG=C && echo "$METADUMP" ...' in the
 #     variable assignments; however, this produces bad PDF files.
 #
-METADUMP=$(gs -dNODISPLAY -q -sFile="$INPUT" $INFOTMPFILE | iconv -f utf-8 -t utf-8 -c)
+METADUMP=$(gs -dNOSAFER -dNODISPLAY -q -sFile="$INPUT" $INFOTMPFILE | iconv -f utf-8 -t utf-8 -c)
 [ -z ${PDFTITLE+x} ] && PDFTITLE=$(echo "$METADUMP" | grep "__knowninfoTitle: " | sed "s/^__knowninfoTitle: //g")
 [ -z ${PDFAUTHOR+x} ] && PDFAUTHOR=$(echo "$METADUMP" | grep "__knowninfoAuthor: " | sed "s/^__knowninfoAuthor: //g")
 [ -z ${PDFSUBJECT+x} ] && PDFSUBJECT=$(echo "$METADUMP" | grep "__knowninfoSubject: " | sed "s/^__knowninfoSubject: //g")
@@ -348,7 +367,7 @@ run gs $MSGOPTS \
     -dDownsampleMonoImages=false -dDownsampleGrayImages=false -dDownsampleColorImages=false \
     -dAutoFilterColorImages=false -dAutoFilterGrayImages=false \
     -sDEVICE=pdfwrite \
-    -sOutputFile=$TMPFILE $INPUT
+    -sOutputFile="$TMPFILE" "$INPUT"
 echo "  Converting to PDF/A-1B..."
 run gs $MSGOPTS \
     -dPDFA=1 -dBATCH -dNOPAUSE -dNOOUTERSAVE \
@@ -357,7 +376,7 @@ run gs $MSGOPTS \
     -dUseCIEColor -sProcessColorModel=DeviceRGB -sColorConversionStrategy=RGB \
     -sOutputICCProfile=$ICCTMPFILE \
     -sDEVICE=pdfwrite \
-    -sOutputFile=$OUTPUT $TMPFILE $PSTMPFILE
+    -sOutputFile="$OUTPUT" "$TMPFILE" $PSTMPFILE
 echo "  Removing temporary files..."
 rm $TMPFILE
 echo "  Done, now ESSE3 is happy! ;)"
@@ -365,8 +384,7 @@ echo "  Done, now ESSE3 is happy! ;)"
 
 #=====# VALIDATE THE RESULT #=====#
 if $VALIDATE; then
-    echo "  Validating resulting file..."
-    echo "  $(./verapdf/verapdf $VERAMSGOPTS --extract --flavour 1b --format text $OUTPUT)"
+    validate $VERAMSGOPTS "$OUTPUT"
 else
     echo "  Suggestion: validate the resulting PDF to be sure it's PDF/A-1B compliant."
 fi
